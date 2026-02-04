@@ -1,0 +1,16 @@
+{
+  "name": "relationship-intel",
+  "version": "1.0.0",
+  "description": "Professional relationship intelligence dashboard",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "cd api && node --watch server.js",
+    "dev:web": "cd web && npm run dev",
+    "build:web": "cd web && npm run build",
+    "sync": "node api/sync-emails.js"
+  },
+  "keywords": ["crm", "email", "contacts"],
+  "author": "Norman C. de Silva",
+  "license": "MIT"
+}

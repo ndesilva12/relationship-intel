@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Relationship Intel - Cinderella</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0a0a0a; color: #e0e0e0; }
+    .card { background: #1a1a1a; border: 1px solid #2a2a2a; }
+    .card:hover { border-color: #3a3a3a; }
+    .accent { color: #60a5fa; }
+    .status-active { background: #065f46; color: #d1fae5; }
+    .status-pending { background: #92400e; color: #fef3c7; }
+    .status-cold { background: #374151; color: #d1d5db; }
+  </style>
+</head>
+<body class="p-8">
+  <div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="mb-8">
+      <h1 class="text-4xl font-bold mb-2">Relationship Intel</h1>
+      <p class="text-gray-400">Project: <span class="accent font-semibold">Cinderella</span></p>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-4 gap-4 mb-8">
+      <div class="card p-6 rounded-lg">
+        <div class="text-gray-400 text-sm mb-1">Total Contacts</div>
+        <div class="text-3xl font-bold" id="stat-contacts">-</div>
+      </div>
+      <div class="card p-6 rounded-lg">
+        <div class="text-gray-400 text-sm mb-1">Total Interactions</div>
+        <div class="text-3xl font-bold" id="stat-interactions">-</div>
+      </div>
+      <div class="card p-6 rounded-lg">
+        <div class="text-gray-400 text-sm mb-1">This Week</div>
+        <div class="text-3xl font-bold accent" id="stat-week">-</div>
+      </div>
+      <div class="card p-6 rounded-lg">
+        <div class="text-gray-400 text-sm mb-1">Last Sync</div>
+        <div class="text-sm font-semibold" id="stat-sync">-</div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="flex gap-4 mb-6">
+      <button onclick="loadData()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold">
+        Refresh
+      </button>
+      <button onclick="triggerSync()" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-semibold">
+        Sync Emails
+      </button>
+      <input type="text" id="search" placeholder="Search contacts..." 
+        class="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500"
+        oninput="filterContacts()">
+      <select id="sort" onchange="sortContacts()" class="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg">
+        <option value="recent">Most Recent</option>
+        <option value="name">Name A-Z</option>
+        <option value="interactions">Most Interactions</option>
+      </select>
+    </div>
+
+    <!-- Contacts List -->
+    <div id="contacts-container" class="space-y-3">
+      <div class="text-center py-12 text-gray-500">Loading...</div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'http://localhost:3001/api';
+    let allContacts = [];
+
+    async function loadData() {
+      try {
+        // Load project stats
+        const projectRes = await fetch(`${API_URL}/projects/cinderella`);
+        const project = await projectRes.json();
+        
+        document.getElementById('stat-contacts').textContent = project.contactCount || 0;
+        document.getElementById('stat-interactions').textContent = project.interactionCount || 0;
+        
+        if (project.last_sync) {
+          const date = new Date(project.last_sync * 1000);
+          document.getElementById('stat-sync').textContent = formatRelativeTime(date);
+        }
+
+        // Load contacts
+        const contactsRes = await fetch(`${API_URL}/projects/cinderella/contacts`);
+        allContacts = await contactsRes.json();
+        
+        // Calculate this week
+        const weekAgo = Date.now() - (7 * 86400000);
+        const thisWeek = allContacts.filter(c => {
+          const lastSeen = c.last_seen * 1000;
+          return lastSeen > weekAgo;
+        });
+        document.getElementById('stat-week').textContent = thisWeek.length;
+
+        renderContacts(allContacts);
+      } catch (error) {
+        console.error('Load error:', error);
+        document.getElementById('contacts-container').innerHTML = 
+          `<div class="text-center py-12 text-red-500">Error: ${error.message}</div>`;
+      }
+    }
+
+    function renderContacts(contacts) {
+      const container = document.getElementById('contacts-container');
+      
+      if (contacts.length === 0) {
+        container.innerHTML = '<div class="text-center py-12 text-gray-500">No contacts found</div>';
+        return;
+      }
+
+      container.innerHTML = contacts.map(contact => {
+        const lastSeen = new Date(contact.last_seen * 1000);
+        const status = getStatus(lastSeen);
+        
+        return `
+          <div class="card p-6 rounded-lg hover:shadow-lg transition cursor-pointer" onclick="viewContact('${contact.id}')">
+            <div class="flex items-start justify-between">
+              <div class="flex-1">
+                <div class="flex items-center gap-3 mb-2">
+                  <h3 class="text-xl font-semibold">${contact.name}</h3>
+                  <span class="px-2 py-1 text-xs rounded ${status.class}">${status.label}</span>
+                </div>
+                <div class="text-sm text-gray-400 mb-2">${contact.email}</div>
+                ${contact.notes ? `<div class="text-sm text-gray-300 mt-2">${contact.notes}</div>` : ''}
+              </div>
+              <div class="text-right text-sm">
+                <div class="text-gray-400">Last contact</div>
+                <div class="font-semibold">${formatRelativeTime(lastSeen)}</div>
+                <div class="text-gray-500 mt-2">${contact.interaction_count || 0} interactions</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function getStatus(lastSeen) {
+      const daysSince = (Date.now() - lastSeen) / 86400000;
+      
+      if (daysSince < 7) return { label: 'Active', class: 'status-active' };
+      if (daysSince < 30) return { label: 'Warm', class: 'status-pending' };
+      return { label: 'Cold', class: 'status-cold' };
+    }
+
+    function formatRelativeTime(date) {
+      const seconds = Math.floor((Date.now() - date) / 1000);
+      
+      if (seconds < 60) return 'just now';
+      if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+      if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+      if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+      
+      return date.toLocaleDateString();
+    }
+
+    function filterContacts() {
+      const query = document.getElementById('search').value.toLowerCase();
+      const filtered = allContacts.filter(c => 
+        c.name.toLowerCase().includes(query) || 
+        c.email.toLowerCase().includes(query) ||
+        (c.notes && c.notes.toLowerCase().includes(query))
+      );
+      renderContacts(filtered);
+    }
+
+    function sortContacts() {
+      const sortBy = document.getElementById('sort').value;
+      const sorted = [...allContacts];
+      
+      if (sortBy === 'recent') {
+        sorted.sort((a, b) => (b.last_seen || 0) - (a.last_seen || 0));
+      } else if (sortBy === 'name') {
+        sorted.sort((a, b) => a.name.localeCompare(b.name));
+      } else if (sortBy === 'interactions') {
+        sorted.sort((a, b) => (b.interaction_count || 0) - (a.interaction_count || 0));
+      }
+      
+      renderContacts(sorted);
+    }
+
+    async function triggerSync() {
+      try {
+        const btn = event.target;
+        btn.disabled = true;
+        btn.textContent = 'Syncing...';
+        
+        await fetch(`${API_URL}/sync`, { method: 'POST' });
+        
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = 'Sync Emails';
+          loadData();
+        }, 5000);
+        
+        alert('Email sync started! This may take a minute. Page will refresh automatically.');
+      } catch (error) {
+        alert('Sync failed: ' + error.message);
+      }
+    }
+
+    function viewContact(email) {
+      // TODO: Open contact detail modal
+      console.log('View contact:', email);
+    }
+
+    // Load on start
+    loadData();
+  </script>
+</body>
+</html>
