@@ -55,9 +55,20 @@ async function syncEmails() {
 
     // Fetch calendar events
     const events = await getCalendarEvents(60);
+    
+    // Get all contacts we've found in emails
+    const contactEmails = new Set(Array.from(contactsMap.keys()));
+    
+    // Filter events: must have keywords OR include one of our contacts
     const relevantEvents = events.filter(event => {
       const text = `${event.summary || ''} ${event.description || ''}`.toLowerCase();
-      return KEYWORDS.some(kw => text.includes(kw.toLowerCase()));
+      const hasKeyword = KEYWORDS.some(kw => text.includes(kw.toLowerCase()));
+      
+      // Check if any attendees match our contacts
+      const attendees = event.attendees || [];
+      const hasRelevantAttendee = attendees.some(a => contactEmails.has(a.email));
+      
+      return hasKeyword || hasRelevantAttendee;
     });
 
     console.log(`\n📅 Found ${relevantEvents.length} relevant calendar events`);
